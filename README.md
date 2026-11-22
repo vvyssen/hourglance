@@ -41,7 +41,7 @@ Idle CPU is under 1% on Apple Silicon.
 
 ## Icon
 
-The icon is drawn in code: `swift Icon/make-icon.swift Icon/icon-1024.png`. It shows a fullscreen app with the time glowing in its corner.
+The icon is drawn in code: `swift Icon/make-icon.swift Icon/icon-1024.png`. It shows a fullscreen app with the clock exactly as Hourglance draws it: a rounded rectangle, 60% black, white 24-hour digits.
 
 ## License
 

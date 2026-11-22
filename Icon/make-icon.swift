@@ -1,5 +1,7 @@
-// Renders the Hourglance app icon: a dark fullscreen "display" with a glowing
-// time pill tucked into its top-right corner. Usage: swift Icon/make-icon.swift out.png
+// Renders the Hourglance app icon: a fullscreen "app" with the clock exactly as
+// Hourglance draws it, in the top-right corner: a rounded rectangle (corner radius
+// = 0.3 × height, as in ClockPanel), black at 60% opacity, white medium-weight digits,
+// 24-hour format. Usage: swift Icon/make-icon.swift out.png
 import AppKit
 
 let S: CGFloat = 1024
@@ -18,64 +20,47 @@ func rgb(_ hex: UInt32, _ a: CGFloat = 1) -> CGColor {
 func gradient(_ colors: [CGColor], _ locs: [CGFloat]) -> CGGradient {
     CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB), colors: colors as CFArray, locations: locs)!
 }
-
-// macOS Big Sur+ icon grid: 824pt body centred on a 1024 canvas.
-let body = CGRect(x: 100, y: 100, width: 824, height: 824)
-let bodyPath = CGPath(roundedRect: body, cornerWidth: 185, cornerHeight: 185, transform: nil)
-
-// Drop shadow
-ctx.saveGState()
-ctx.setShadow(offset: CGSize(width: 0, height: -12), blur: 28, color: rgb(0x000000, 0.35))
-ctx.addPath(bodyPath); ctx.setFillColor(rgb(0x111522)); ctx.fillPath()
-ctx.restoreGState()
-
-// Body: deep night gradient (a fullscreen app)
-ctx.saveGState()
-ctx.addPath(bodyPath); ctx.clip()
-ctx.drawLinearGradient(gradient([rgb(0x252B45), rgb(0x10131F)], [0, 1]),
-                       start: CGPoint(x: 0, y: body.maxY), end: CGPoint(x: 0, y: body.minY), options: [])
-
-// Warm light spilling from the top-right corner — the "glance"
-ctx.drawRadialGradient(gradient([rgb(0xFFB547, 0.30), rgb(0xFFB547, 0)], [0, 1]),
-                       startCenter: CGPoint(x: body.maxX - 150, y: body.maxY - 150), startRadius: 0,
-                       endCenter: CGPoint(x: body.maxX - 150, y: body.maxY - 150), endRadius: 560, options: [])
-
-// Faint content lines: whatever you're working on in fullscreen
-let lines: [(CGFloat, CGFloat, UInt32)] = [(0.50, 0.16, 0x7C88C9), (0.40, 0.10, 0x7C88C9),
-                                           (0.58, 0.10, 0x7C88C9), (0.30, 0.10, 0x7C88C9), (0.46, 0.08, 0x7C88C9)]
-for (i, (w, a, c)) in lines.enumerated() {
-    let r = CGRect(x: body.minX + 96, y: body.minY + 150 + CGFloat(i) * 78, width: body.width * w, height: 30)
-    ctx.addPath(CGPath(roundedRect: r, cornerWidth: 15, cornerHeight: 15, transform: nil))
-    ctx.setFillColor(rgb(c, a)); ctx.fillPath()
+func rounded(_ r: CGRect, _ radius: CGFloat) -> CGPath {
+    CGPath(roundedRect: r, cornerWidth: radius, cornerHeight: radius, transform: nil)
 }
 
-// Inner top highlight
-ctx.addPath(bodyPath); ctx.setStrokeColor(rgb(0xFFFFFF, 0.08)); ctx.setLineWidth(4); ctx.strokePath()
+// macOS icon grid: 824pt body centred on a 1024 canvas.
+let body = CGRect(x: 100, y: 100, width: 824, height: 824)
+let bodyPath = rounded(body, 185)
+
+ctx.saveGState()
+ctx.setShadow(offset: CGSize(width: 0, height: -12), blur: 28, color: rgb(0x000000, 0.30))
+ctx.addPath(bodyPath); ctx.setFillColor(rgb(0x4A6CF0)); ctx.fillPath()
 ctx.restoreGState()
 
-// The time pill in the corner
-let pill = CGRect(x: body.maxX - 84 - 360, y: body.maxY - 84 - 144, width: 360, height: 144)
-let pillPath = CGPath(roundedRect: pill, cornerWidth: 72, cornerHeight: 72, transform: nil)
 ctx.saveGState()
-ctx.addPath(bodyPath); ctx.clip()   // keep the glow inside the icon shape
-ctx.setShadow(offset: .zero, blur: 60, color: rgb(0xFFA53D, 0.75))
-ctx.addPath(pillPath); ctx.setFillColor(rgb(0xFFB547)); ctx.fillPath()
-ctx.restoreGState()
-ctx.saveGState()
-ctx.addPath(pillPath); ctx.clip()
-ctx.drawLinearGradient(gradient([rgb(0xFFD27A), rgb(0xFF9A3C)], [0, 1]),
-                       start: CGPoint(x: 0, y: pill.maxY), end: CGPoint(x: 0, y: pill.minY), options: [])
+ctx.addPath(bodyPath); ctx.clip()
+
+// Background: a bright, colourful fullscreen app / wallpaper
+ctx.drawLinearGradient(gradient([rgb(0x5AA8FF), rgb(0x5B6CF2), rgb(0x8A4FE0)], [0, 0.55, 1]),
+                       start: CGPoint(x: body.minX, y: body.maxY), end: CGPoint(x: body.maxX, y: body.minY), options: [])
+ctx.drawRadialGradient(gradient([rgb(0xFFFFFF, 0.22), rgb(0xFFFFFF, 0)], [0, 1]),
+                       startCenter: CGPoint(x: body.minX + 180, y: body.maxY - 160), startRadius: 0,
+                       endCenter: CGPoint(x: body.minX + 180, y: body.maxY - 160), endRadius: 520, options: [])
+
+// App content: a toolbar strip running under the clock (shows the clock is translucent) + text lines
+let toolbar = CGRect(x: body.minX, y: body.maxY - 300, width: body.width, height: 300)
+ctx.setFillColor(rgb(0xFFFFFF, 0.16)); ctx.fill(toolbar)
+for (i, w) in [0.56, 0.40, 0.62, 0.34, 0.50].enumerated() {
+    let r = CGRect(x: body.minX + 96, y: body.minY + 110 + CGFloat(i) * 76, width: body.width * w, height: 32)
+    ctx.addPath(rounded(r, 16)); ctx.setFillColor(rgb(0xFFFFFF, 0.30)); ctx.fillPath()
+}
+
+// The clock, same proportions as the real one (58×20pt, radius 6, 13pt digits) scaled ×7.5
+let k: CGFloat = 7.5
+let clock = CGRect(x: body.maxX - 96 - 58 * k, y: toolbar.midY - 10 * k, width: 58 * k, height: 20 * k)
+ctx.addPath(rounded(clock, 6 * k)); ctx.setFillColor(rgb(0x000000, 0.6)); ctx.fillPath()
 ctx.restoreGState()
 
-// Digits
-let base = NSFont.systemFont(ofSize: 106, weight: .heavy)
-let font = base.fontDescriptor.withDesign(.rounded).flatMap { NSFont(descriptor: $0, size: 106) } ?? base
-let attrs: [NSAttributedString.Key: Any] = [
-    .font: font, .foregroundColor: NSColor(cgColor: rgb(0x1A1F33))!, .kern: -2,
-]
-let text = NSAttributedString(string: "9:41", attributes: attrs)
+let font = NSFont.monospacedDigitSystemFont(ofSize: 13 * k, weight: .medium)
+let text = NSAttributedString(string: "09:41", attributes: [.font: font, .foregroundColor: NSColor.white])
 let ts = text.size()
-text.draw(at: CGPoint(x: pill.midX - ts.width / 2, y: pill.midY - ts.height / 2 + 2))
+text.draw(at: CGPoint(x: clock.midX - ts.width / 2, y: clock.midY - ts.height / 2))
 
 NSGraphicsContext.current = nil
 try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: out))
