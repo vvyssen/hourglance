@@ -1,3 +1,5 @@
+<p align="center"><img src="Icon/icon-1024.png" width="160" alt="Hourglance icon"></p>
+
 # Hourglance · 一瞥
 
 *Hour + glance.* A tiny open-source macOS clock that appears in a screen corner **only when the menu bar is hidden**: in fullscreen apps, or with *Automatically hide and show the menu bar* on. When the menu bar comes back, the clock goes away. It's an open-source alternative to [Corner Time](https://apps.apple.com/app/id6746757189).
@@ -36,6 +38,10 @@ Idle CPU is under 1% on Apple Silicon.
 
 - On displays without a notch, a top-corner clock covers a few pixels of the fullscreen app's own toolbar (Corner Time has the same issue). Use a bottom corner if that bothers you.
 - The detection relies on undocumented WindowServer behaviour. It's verified on macOS 27, and should work back to macOS 13.
+
+## Icon
+
+The icon is drawn in code: `swift Icon/make-icon.swift Icon/icon-1024.png`. It shows a fullscreen app with the time glowing in its corner.
 
 ## License
 
