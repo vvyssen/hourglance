@@ -17,16 +17,29 @@ cp -R build/Hourglance.app /Applications/
 open /Applications/Hourglance.app
 ```
 
-Settings live in the ⏰ menu bar icon (reachable whenever the menu bar is visible):
+Open **Settings…** from the menu bar icon, ⌥-click the clock, or open Hourglance again from Finder or Spotlight.
 
-| Option | Choices |
-|---|---|
-| Show | Only when menu bar is hidden (default) / Always |
-| Corner | Top right (default) / top left / bottom right / bottom left |
-| Format | 24-hour, seconds, date (follows your system locale), size S/M/L |
-| Look | Background pill or bare text with shadow; fade when mouse is near |
-| Displays | Turn the clock on or off per display |
-| Launch at login | Via `SMAppService` |
+## Settings
+
+**Time**
+- By default it follows the system time format: 12/24-hour (System Settings › Date & Time), plus seconds and AM/PM (Control Center › Clock Options). Changes are picked up within about 2 seconds, with no restart.
+- The default shows only the time. Weekday and date are opt-in.
+- Date formats: system/locale, `2026-11-23`, `2026/11/23`, `11/23`, `23/11`, `11/23/2026`, `23/11/2026`, `Nov 23`, `23 Nov`, or your own Unicode pattern. You can also choose whether the date goes before or after the time.
+- The time zone always follows macOS, including when you travel.
+
+**Style**
+- Shape: rounded rectangle (adjustable radius) or capsule.
+- Background presets: translucent black (default), black, graphite, translucent white, blue, amber, green, or none (bare text with a shadow). There's also a color picker with opacity.
+- Text color: automatic contrast or custom.
+- Font size from 10 to 24 pt, and four weights.
+- A live preview shows the result on a light and a dark backdrop.
+
+**General**
+- When to show it: only when the menu bar is hidden, or always. Pick any of the four corners.
+- Each display can be turned on or off.
+- **Hide temporarily** for 5 minutes, 30 minutes, 1 hour, or until you show it again. The global shortcut ⌃⌥⌘T (recordable) toggles hide/show and needs no Accessibility permission.
+- **Modifier-click**: hold ⌥ (or ⌘ ⌃ ⇧) and click the clock to open its menu. Without the modifier, clicks pass through to the app underneath.
+- Fade when the pointer is near, show or hide the menu bar icon, and launch at login.
 
 ## How it detects a hidden menu bar
 
