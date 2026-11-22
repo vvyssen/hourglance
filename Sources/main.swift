@@ -157,6 +157,30 @@ final class ClockPanel: NSPanel {
     }
 }
 
+// MARK: - App icon follows light / dark appearance
+
+/// The bundle's own icon (Hourglance.icns) is the light-mode one. In dark mode the app sets
+/// HourglanceDark.icns as a custom Finder icon on its bundle; back in light mode it removes the
+/// custom icon, which leaves the bundle untouched. (A native dark app icon needs an Icon Composer
+/// file compiled by Xcode's actool; this keeps the build Command-Line-Tools-only.)
+enum AppIcon {
+    private static var lastDark: Bool?
+
+    static func apply() {
+        let dark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        guard dark != lastDark else { return }
+        lastDark = dark
+        let bundle = Bundle.main.bundlePath
+        guard bundle.hasSuffix(".app"), FileManager.default.isWritableFile(atPath: bundle) else { return }
+        let icon = dark ? Bundle.main.url(forResource: "HourglanceDark", withExtension: "icns").flatMap(NSImage.init(contentsOf:)) : nil
+        if dark && icon == nil { return }
+        let hasCustom = FileManager.default.fileExists(atPath: bundle + "/Icon\r")
+        if !dark && !hasCustom { return }                    // already the plain bundle icon
+        NSWorkspace.shared.setIcon(icon, forFile: bundle, options: [])
+        NSWorkspace.shared.noteFileSystemChanged(bundle)
+    }
+}
+
 // MARK: - Controller
 
 final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -167,6 +191,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var pollTimer: Timer?
     var mouseMonitor: Any?
     var settingsVersion = 0
+    var appearanceObservation: NSKeyValueObservation?
 
     func applicationDidFinishLaunching(_ n: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -195,6 +220,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.updateHoverFade()
         }
         refresh()
+
+        AppIcon.apply()
+        appearanceObservation = NSApp.observe(\.effectiveAppearance) { _, _ in
+            DispatchQueue.main.async { AppIcon.apply() }
+        }
     }
 
     // Fire exactly on each second boundary so the seconds digit is never late.

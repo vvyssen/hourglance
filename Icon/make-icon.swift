@@ -28,28 +28,36 @@ func rounded(_ r: CGRect, _ radius: CGFloat) -> CGPath {
 let body = CGRect(x: 100, y: 100, width: 824, height: 824)
 let bodyPath = rounded(body, 185)
 
+// Background styles. Usage: swift Icon/make-icon.swift out.png [style]
+struct Style { let top: UInt32, bottom: UInt32, band: CGColor, line: CGColor }
+let styles: [String: Style] = [
+    "light":    Style(top: 0xFDFDFE, bottom: 0xE9EBEF, band: rgb(0x000000, 0.05), line: rgb(0x8A93A6, 0.35)),
+    "notch":    Style(top: 0xF7F7F9, bottom: 0xE6E8EC, band: rgb(0x000000, 1.00), line: rgb(0x8A93A6, 0.35)),
+    "graphite": Style(top: 0x9AA0AA, bottom: 0x5E636C, band: rgb(0xFFFFFF, 0.10), line: rgb(0xFFFFFF, 0.28)),
+    "sand":     Style(top: 0xF8E3C8, bottom: 0xE9A97E, band: rgb(0xFFFFFF, 0.22), line: rgb(0xFFFFFF, 0.45)),
+]
+let styleName = CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : "light"
+let st = styles[styleName]!
+
 ctx.saveGState()
 ctx.setShadow(offset: CGSize(width: 0, height: -12), blur: 28, color: rgb(0x000000, 0.30))
-ctx.addPath(bodyPath); ctx.setFillColor(rgb(0x4A6CF0)); ctx.fillPath()
+ctx.addPath(bodyPath); ctx.setFillColor(rgb(st.bottom)); ctx.fillPath()
 ctx.restoreGState()
 
 ctx.saveGState()
 ctx.addPath(bodyPath); ctx.clip()
-
-// Background: a bright, colourful fullscreen app / wallpaper
-ctx.drawLinearGradient(gradient([rgb(0x5AA8FF), rgb(0x5B6CF2), rgb(0x8A4FE0)], [0, 0.55, 1]),
+ctx.drawLinearGradient(gradient([rgb(st.top), rgb(st.bottom)], [0, 1]),
                        start: CGPoint(x: body.minX, y: body.maxY), end: CGPoint(x: body.maxX, y: body.minY), options: [])
-ctx.drawRadialGradient(gradient([rgb(0xFFFFFF, 0.22), rgb(0xFFFFFF, 0)], [0, 1]),
-                       startCenter: CGPoint(x: body.minX + 180, y: body.maxY - 160), startRadius: 0,
-                       endCenter: CGPoint(x: body.minX + 180, y: body.maxY - 160), endRadius: 520, options: [])
 
-// App content: a toolbar strip running under the clock (shows the clock is translucent) + text lines
+// Top band: the strip the clock sits in (app toolbar, or the black notch strip in fullscreen)
 let toolbar = CGRect(x: body.minX, y: body.maxY - 300, width: body.width, height: 300)
-ctx.setFillColor(rgb(0xFFFFFF, 0.16)); ctx.fill(toolbar)
+ctx.setFillColor(st.band); ctx.fill(toolbar)
 for (i, w) in [0.56, 0.40, 0.62, 0.34, 0.50].enumerated() {
     let r = CGRect(x: body.minX + 96, y: body.minY + 110 + CGFloat(i) * 76, width: body.width * w, height: 32)
-    ctx.addPath(rounded(r, 16)); ctx.setFillColor(rgb(0xFFFFFF, 0.30)); ctx.fillPath()
+    ctx.addPath(rounded(r, 16)); ctx.setFillColor(st.line); ctx.fillPath()
 }
+// Hairline edge so light icons don't dissolve into light backgrounds
+ctx.addPath(bodyPath); ctx.setStrokeColor(rgb(0x000000, 0.10)); ctx.setLineWidth(4); ctx.strokePath()
 
 // The clock, same proportions as the real one (58×20pt, radius 6, 13pt digits) scaled ×7.5
 let k: CGFloat = 7.5

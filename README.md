@@ -1,4 +1,4 @@
-<p align="center"><img src="Icon/icon-1024.png" width="160" alt="Hourglance icon"></p>
+<p align="center"><img src="Icon/variants/light.png" width="160" alt="Hourglance icon"></p>
 
 # Hourglance · 一瞥
 
@@ -41,7 +41,15 @@ Idle CPU is under 1% on Apple Silicon.
 
 ## Icon
 
-The icon is drawn in code: `swift Icon/make-icon.swift Icon/icon-1024.png`. It shows a fullscreen app with the clock exactly as Hourglance draws it: a rounded rectangle, 60% black, white 24-hour digits.
+| Light (default) | Dark (notch) | Graphite | Sand |
+|:-:|:-:|:-:|:-:|
+| <img src="Icon/variants/light.png" width="120"> | <img src="Icon/variants/notch.png" width="120"> | <img src="Icon/variants/graphite.png" width="120"> | <img src="Icon/variants/sand.png" width="120"> |
+
+Each icon shows the clock exactly as Hourglance draws it: a rounded rectangle, 60% black, white 24-hour digits. **Light** is that clock over a light app. **Dark** is what you really see on a notched MacBook in fullscreen, white digits in the black strip.
+
+The app icon follows the system appearance. The bundle ships the light icon. In dark mode the running app sets the dark one as the bundle's custom Finder icon, and removes it again in light mode. (A native dark app icon would need an Icon Composer file compiled by Xcode; this keeps the build Command-Line-Tools-only. The code signature stays valid either way.) Graphite and Sand are spare variants.
+
+Everything is drawn in code. `Icon/build-icons.sh` renders all four PNGs and both `.icns` files from `Icon/make-icon.swift`.
 
 ## License
 

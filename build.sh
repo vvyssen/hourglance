@@ -10,6 +10,6 @@ done
 lipo -create build/Hourglance-arm64 build/Hourglance-x86_64 -output "$APP/Contents/MacOS/Hourglance"
 rm build/Hourglance-arm64 build/Hourglance-x86_64
 cp Info.plist "$APP/Contents/Info.plist"
-mkdir -p "$APP/Contents/Resources" && cp Icon/Hourglance.icns "$APP/Contents/Resources/"
+mkdir -p "$APP/Contents/Resources" && cp Icon/Hourglance.icns Icon/HourglanceDark.icns "$APP/Contents/Resources/"
 codesign --force --sign - "$APP"
 echo "Built $APP"
