@@ -25,6 +25,9 @@ struct SystemClockPrefs: Equatable {
 final class ClockFormat {
     private let timeF = DateFormatter()
     private let dateF = DateFormatter()
+    private let zoneF = DateFormatter()
+    private var zone: TimeZone = .autoupdatingCurrent
+    private var zoneStyle: ZoneStyle?
     private var hasDate = false
     private var dateFirst = true
 
@@ -35,7 +38,15 @@ final class ClockFormat {
         // patterns. Following the system that's what we want; for a custom hour cycle, use a fresh
         // locale with the same language/region but without the override.
         let loc: Locale = Prefs.followSystem ? .autoupdatingCurrent : Locale(identifier: Locale.current.identifier)
-        for f in [timeF, dateF] { f.locale = loc; f.timeZone = .autoupdatingCurrent }
+        zone = Prefs.customTimeZone ?? .autoupdatingCurrent
+        for f in [timeF, dateF, zoneF] { f.locale = loc; f.timeZone = zone }
+        zoneStyle = Prefs.showZone ? Prefs.zoneStyle : nil
+        switch zoneStyle {
+        case .abbreviation: zoneF.dateFormat = "zzz"        // SGT, PST, GMT+8
+        case .city: zoneF.dateFormat = "VVV"                // Singapore, 东京 (localized exemplar city)
+        case .fullName: zoneF.dateFormat = "zzzz"           // Singapore Standard Time
+        case .offset, nil: break                            // computed per date (DST)
+        }
 
         let is24 = Prefs.followSystem ? system.is24Hour : Prefs.hourCycle == .h24
         let seconds = Prefs.followSystem ? system.seconds : Prefs.seconds
@@ -68,10 +79,29 @@ final class ClockFormat {
     }
 
     func string(from date: Date) -> String {
-        let t = timeF.string(from: date)
+        var t = timeF.string(from: date)
+        if let z = zoneStyle { t += " " + (z == .offset ? Self.offset(zone, date) : zoneF.string(from: date)) }
         guard hasDate else { return t }
         let d = dateF.string(from: date)
         return dateFirst ? "\(d) \(t)" : "\(t) \(d)"
+    }
+
+    /// "UTC+8", "UTC−3:30", "UTC" — shorter and clearer than GMT+08:00.
+    static func offset(_ tz: TimeZone, _ date: Date = Date()) -> String {
+        let secs = tz.secondsFromGMT(for: date)
+        guard secs != 0 else { return "UTC" }
+        let h = abs(secs) / 3600, m = abs(secs) % 3600 / 60
+        return "UTC" + (secs < 0 ? "−" : "+") + "\(h)" + (m > 0 ? String(format: ":%02d", m) : "")
+    }
+
+    /// How a zone looks in each name style, for pickers.
+    static func zoneSample(_ style: ZoneStyle, _ tz: TimeZone) -> String {
+        if style == .offset { return offset(tz) }
+        let f = DateFormatter()
+        f.locale = .autoupdatingCurrent
+        f.timeZone = tz
+        f.dateFormat = [.abbreviation: "zzz", .city: "VVV", .fullName: "zzzz"][style]!
+        return f.string(from: Date())
     }
 
     /// Example rendering of a date style, for pickers.

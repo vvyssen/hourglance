@@ -44,10 +44,11 @@ final class ClockPanel: NSPanel {
 
         let size = Prefs.fontSize, scale = size / 13
         label.font = .monospacedDigitSystemFont(ofSize: size, weight: Prefs.weight.ns)
-        label.textColor = Prefs.textColor
+        let style = Prefs.style()
+        label.textColor = style.text
         label.stringValue = text
-        box.layer?.backgroundColor = Prefs.backgroundColor?.cgColor
-        label.shadow = Prefs.needsShadow ? {
+        box.layer?.backgroundColor = style.background?.cgColor
+        label.shadow = style.shadow ? {
             let s = NSShadow(); s.shadowColor = NSColor.black.withAlphaComponent(0.8)
             s.shadowBlurRadius = 2; s.shadowOffset = .zero; return s
         }() : nil

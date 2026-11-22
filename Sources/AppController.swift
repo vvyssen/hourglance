@@ -68,8 +68,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         applyPrefs()
 
         AppIcon.apply()
-        appearanceObservation = NSApp.observe(\.effectiveAppearance) { _, _ in
-            DispatchQueue.main.async { AppIcon.apply() }
+        appearanceObservation = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in
+            DispatchQueue.main.async {
+                AppIcon.apply()
+                self?.styleVersion += 1      // light/dark colors may differ
+                self?.refresh()
+            }
         }
     }
 

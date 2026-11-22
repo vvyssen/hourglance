@@ -10,6 +10,10 @@ enum Key {
     static let shape = "shape", cornerRadius = "cornerRadius", bgPreset = "bgPreset", bgColor = "bgColor"
     static let textMode = "textColorMode", textColor = "textColor", fontSize = "fontPoints", weight = "fontWeight"
     static let fade = "fadeOnHover", clickModifier = "clickModifier", statusItem = "showStatusItem"
+    static let separateAppearance = "separateAppearance"
+    static let timeZoneMode = "timeZoneMode", timeZoneID = "timeZoneID", showZone = "showTimeZone", zoneStyle = "timeZoneStyle"
+    /// Light-mode keys are the plain ones; dark-mode variants add this suffix.
+    static func themed(_ key: String, dark: Bool) -> String { dark ? key + "Dark" : key }
     static let hotKeyEnabled = "hotKeyEnabled", hotKeyCode = "hotKeyCode", hotKeyMods = "hotKeyMods", hotKeyDisplay = "hotKeyDisplay"
 }
 
@@ -81,7 +85,7 @@ enum BgPreset: String, CaseIterable, Identifiable {
         case .custom: return "Custom"
         }
     }
-    var color: NSColor? {
+    func color(customHex: String) -> NSColor? {
         switch self {
         case .blackTranslucent: return NSColor(white: 0, alpha: 0.6)
         case .black: return .black
@@ -91,7 +95,25 @@ enum BgPreset: String, CaseIterable, Identifiable {
         case .amber: return NSColor(hex: "FF9F0AE6")
         case .green: return NSColor(hex: "30D158E6")
         case .none: return nil
-        case .custom: return NSColor(hex: Prefs.bgColorHex) ?? .black
+        case .custom: return NSColor(hex: customHex) ?? .black
+        }
+    }
+}
+
+enum TimeZoneMode: String, CaseIterable, Identifiable {
+    case system, custom
+    var id: Self { self }
+}
+
+enum ZoneStyle: String, CaseIterable, Identifiable {
+    case abbreviation, city, offset, fullName
+    var id: Self { self }
+    var title: String {
+        switch self {
+        case .abbreviation: return "Abbreviation"
+        case .city: return "City"
+        case .offset: return "UTC offset"
+        case .fullName: return "Full name"
         }
     }
 }
@@ -127,6 +149,13 @@ enum Prefs {
             Key.bgPreset: BgPreset.blackTranslucent.rawValue, Key.bgColor: "00000099",
             Key.textMode: TextColorMode.auto.rawValue, Key.textColor: "FFFFFFFF",
             Key.fontSize: 13.0, Key.weight: FontWeight.medium.rawValue,
+            Key.themed(Key.bgPreset, dark: true): BgPreset.blackTranslucent.rawValue,
+            Key.themed(Key.bgColor, dark: true): "00000099",
+            Key.themed(Key.textMode, dark: true): TextColorMode.auto.rawValue,
+            Key.themed(Key.textColor, dark: true): "FFFFFFFF",
+            Key.separateAppearance: false,
+            Key.timeZoneMode: TimeZoneMode.system.rawValue, Key.timeZoneID: TimeZone.current.identifier,
+            Key.showZone: false, Key.zoneStyle: ZoneStyle.abbreviation.rawValue,
             Key.fade: true, Key.clickModifier: ClickModifier.option.rawValue, Key.statusItem: true,
             Key.hotKeyEnabled: true, Key.hotKeyCode: 17,   // T
             Key.hotKeyMods: Int(NSEvent.ModifierFlags([.control, .option, .command]).rawValue),
@@ -152,10 +181,6 @@ enum Prefs {
     static var dateFirst: Bool { d.bool(forKey: Key.dateFirst) }
     static var shape: ClockShape { e(Key.shape, .roundedRect) }
     static var cornerRadius: CGFloat { CGFloat(d.double(forKey: Key.cornerRadius)) }
-    static var bgPreset: BgPreset { e(Key.bgPreset, .blackTranslucent) }
-    static var bgColorHex: String { d.string(forKey: Key.bgColor) ?? "00000099" }
-    static var textMode: TextColorMode { e(Key.textMode, .auto) }
-    static var textColorHex: String { d.string(forKey: Key.textColor) ?? "FFFFFFFF" }
     static var fontSize: CGFloat { CGFloat(d.double(forKey: Key.fontSize)) }
     static var weight: FontWeight { e(Key.weight, .medium) }
     static var fade: Bool { d.bool(forKey: Key.fade) }
@@ -166,16 +191,38 @@ enum Prefs {
     static var hotKeyMods: NSEvent.ModifierFlags { NSEvent.ModifierFlags(rawValue: UInt(d.integer(forKey: Key.hotKeyMods))) }
     static var hotKeyDisplay: String { d.string(forKey: Key.hotKeyDisplay) ?? "" }
 
-    /// Resolved style used by both the real clock and the settings preview.
-    static var backgroundColor: NSColor? { bgPreset.color }
-    static var textColor: NSColor {
-        if textMode == .custom, let c = NSColor(hex: textColorHex) { return c }
-        guard let bg = backgroundColor, bg.alphaComponent >= 0.35 else { return .white }
-        return bg.luminance > 0.6 ? .black : .white
+    static var separateAppearance: Bool { d.bool(forKey: Key.separateAppearance) }
+    static var systemIsDark: Bool { NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua }
+
+    static var timeZoneMode: TimeZoneMode { e(Key.timeZoneMode, .system) }
+    /// nil = follow macOS (autoupdating).
+    static var customTimeZone: TimeZone? {
+        timeZoneMode == .custom ? d.string(forKey: Key.timeZoneID).flatMap(TimeZone.init(identifier:)) : nil
     }
-    /// Bare text over unknown content needs a shadow to stay legible.
-    static var needsShadow: Bool { (backgroundColor?.alphaComponent ?? 0) < 0.35 }
+    static var showZone: Bool { d.bool(forKey: Key.showZone) }
+    static var zoneStyle: ZoneStyle { e(Key.zoneStyle, .abbreviation) }
+
+    /// Resolved colors, shared by the real clock and the settings preview. `dark` picks the
+    /// dark-mode set when separate light/dark colors are on; nil means "the current system appearance".
+    static func style(dark: Bool? = nil) -> ClockStyle {
+        let useDark = separateAppearance && (dark ?? systemIsDark)
+        let preset = e(Key.themed(Key.bgPreset, dark: useDark), BgPreset.blackTranslucent)
+        let bg = preset.color(customHex: d.string(forKey: Key.themed(Key.bgColor, dark: useDark)) ?? "00000099")
+        let mode = e(Key.themed(Key.textMode, dark: useDark), TextColorMode.auto)
+        let text: NSColor
+        if mode == .custom, let c = NSColor(hex: d.string(forKey: Key.themed(Key.textColor, dark: useDark)) ?? "") {
+            text = c
+        } else if let bg, bg.alphaComponent >= 0.35 {
+            text = bg.luminance > 0.6 ? .black : .white
+        } else {
+            text = .white
+        }
+        // Bare text over unknown content needs a shadow to stay legible.
+        return ClockStyle(background: bg, text: text, shadow: (bg?.alphaComponent ?? 0) < 0.35)
+    }
 }
+
+struct ClockStyle { let background: NSColor?; let text: NSColor; let shadow: Bool }
 
 extension NSColor {
     convenience init?(hex: String) {

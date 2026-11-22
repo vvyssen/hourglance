@@ -34,35 +34,49 @@ struct ClockPreview: View {
     @AppStorage(Key.textColor) var textColor = "FFFFFFFF"
     @AppStorage(Key.fontSize) var fontSize = 13.0
     @AppStorage(Key.weight) var weight = FontWeight.medium
+    @AppStorage(Key.separateAppearance) var separate = false
+    @AppStorage(Key.themed(Key.bgPreset, dark: true)) var bgPresetDark = BgPreset.blackTranslucent
+    @AppStorage(Key.themed(Key.bgColor, dark: true)) var bgColorDark = "00000099"
+    @AppStorage(Key.themed(Key.textMode, dark: true)) var textModeDark = TextColorMode.auto
+    @AppStorage(Key.themed(Key.textColor, dark: true)) var textColorDark = "FFFFFFFF"
+    @AppStorage(Key.timeZoneMode) var tzMode = TimeZoneMode.system
+    @AppStorage(Key.timeZoneID) var tzID = ""
+    @AppStorage(Key.showZone) var showZone = false
+    @AppStorage(Key.zoneStyle) var zoneStyle = ZoneStyle.abbreviation
 
     var body: some View {
         let format = ClockFormat()   // rebuilt from current prefs on every render
         TimelineView(.periodic(from: .now, by: 1)) { ctx in
             HStack(spacing: 0) {
-                sample(format.string(from: ctx.date), backdrop: [Color(white: 0.96), Color(white: 0.86)])
-                sample(format.string(from: ctx.date), backdrop: [Color(white: 0.22), Color(white: 0.08)])
+                sample(format.string(from: ctx.date), dark: false,
+                       label: separate ? "Light mode" : "On light", backdrop: [Color(white: 0.96), Color(white: 0.86)])
+                sample(format.string(from: ctx.date), dark: true,
+                       label: separate ? "Dark mode" : "On dark", backdrop: [Color(white: 0.22), Color(white: 0.08)])
             }
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
-        .frame(height: 64)
+        .frame(height: 72)
     }
 
-    func sample(_ text: String, backdrop: [Color]) -> some View {
+    func sample(_ text: String, dark: Bool, label: String, backdrop: [Color]) -> some View {
+        let style = Prefs.style(dark: dark)
         let scale = fontSize / 13
         let h = ceil(NSFont.monospacedDigitSystemFont(ofSize: fontSize, weight: weight.ns).boundingRectForFont.height * 0.82 + 4 * scale)
         let padX = shape == .capsule ? max(8 * scale, h * 0.45) : 8 * scale
-        let bg = Prefs.backgroundColor.map { Color(nsColor: $0) } ?? .clear
+        let bg = style.background.map { Color(nsColor: $0) } ?? .clear
         let radius = shape == .capsule ? h / 2 : min(cornerRadius * scale, h / 2)
         return ZStack {
             LinearGradient(colors: backdrop, startPoint: .topLeading, endPoint: .bottomTrailing)
             Text(text)
                 .font(.system(size: fontSize, weight: Font.Weight(weight)).monospacedDigit())
-                .foregroundColor(Color(nsColor: Prefs.textColor))
-                .shadow(color: Prefs.needsShadow ? .black.opacity(0.8) : .clear, radius: 1.5)
+                .foregroundColor(Color(nsColor: style.text))
+                .shadow(color: style.shadow ? .black.opacity(0.8) : .clear, radius: 1.5)
                 .lineLimit(1)
                 .padding(.horizontal, padX)
                 .frame(height: h)
                 .background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(bg))
+            Text(label).font(.system(size: 10)).foregroundColor(dark ? .white.opacity(0.45) : .black.opacity(0.4))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading).padding(6)
         }
     }
 }
@@ -90,6 +104,10 @@ struct TimeTab: View {
     @AppStorage(Key.dateStyle) var dateStyle = DateStyle.system
     @AppStorage(Key.datePattern) var datePattern = "yyyy.MM.dd"
     @AppStorage(Key.dateFirst) var dateFirst = true
+    @AppStorage(Key.timeZoneMode) var tzMode = TimeZoneMode.system
+    @AppStorage(Key.showZone) var showZone = false
+    @AppStorage(Key.zoneStyle) var zoneStyle = ZoneStyle.abbreviation
+    @AppStorage(Key.timeZoneID) var tzID = ""
 
     var body: some View {
         let sys = SystemClockPrefs.read()
@@ -134,12 +152,67 @@ struct TimeTab: View {
             } header: { Text("Date") }
 
             Section {
-                LabeledContent("Time zone", value: "\(TimeZone.current.localizedName(for: .standard, locale: .current) ?? "") (\(sys.timeZone))")
-                Text("Always follows macOS, including when you travel or change it in System Settings.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
+                Picker("Time zone", selection: $tzMode) {
+                    Text("Follow macOS (\(sys.timeZone))").tag(TimeZoneMode.system)
+                    Text("Custom").tag(TimeZoneMode.custom)
+                }
+                if tzMode == .custom { TimeZonePicker() }
+                Toggle("Show time zone name", isOn: $showZone)
+                if showZone {
+                    let tz = Prefs.customTimeZone ?? .current
+                    Picker("Name style", selection: $zoneStyle) {
+                        ForEach(ZoneStyle.allCases) { st in
+                            Text("\(st.title) (\(ClockFormat.zoneSample(st, tz)))").tag(st)
+                        }
+                    }
+                }
+            } header: { Text("Time zone") }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// Searchable list of every time zone: matches identifier, city, localized name and abbreviation.
+struct TimeZonePicker: View {
+    @AppStorage(Key.timeZoneID) var tzID = ""
+    @ObservedObject var model = TimeZoneSearch.shared
+
+    var body: some View {
+        if let z = model.all.first(where: { $0.id == tzID }) {
+            LabeledContent("Selected", value: "\(z.city) · \(z.id) · \(z.offset)")
+        }
+        TextField("Search", text: $model.query, prompt: Text("City, region, abbreviation or UTC+8"))
+            .textFieldStyle(.roundedBorder)
+        List(model.results(selected: tzID), id: \.id) { z in
+            HStack {
+                Text(z.city)
+                Text(z.id).foregroundStyle(.secondary).font(.caption)
+                Spacer()
+                Text(z.offset).monospacedDigit().foregroundStyle(.secondary)
+                if z.id == tzID { Image(systemName: "checkmark").foregroundColor(.accentColor) }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { tzID = z.id }
+        }
+        .frame(height: 150)
+    }
+}
+
+final class TimeZoneSearch: ObservableObject {
+    static let shared = TimeZoneSearch()
+    struct Zone { let id, city, name, abbr, offset: String }
+    let all: [Zone] = TimeZone.knownTimeZoneIdentifiers.compactMap { id in
+        guard let tz = TimeZone(identifier: id) else { return nil }
+        let city = id.split(separator: "/").last.map { $0.replacingOccurrences(of: "_", with: " ") } ?? id
+        return Zone(id: id, city: city, name: tz.localizedName(for: .generic, locale: .current) ?? "",
+                    abbr: tz.abbreviation() ?? "", offset: ClockFormat.offset(tz))
+    }.sorted { $0.city < $1.city }
+    @Published var query = ""
+    /// With no query, the selected zone is listed first.
+    func results(selected: String) -> [Zone] {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return all.filter { $0.id == selected } + all.filter { $0.id != selected } }
+        return all.filter { "\($0.id) \($0.city) \($0.name) \($0.abbr) \($0.offset)".lowercased().contains(q) }
     }
 }
 
@@ -148,10 +221,8 @@ struct TimeTab: View {
 struct StyleTab: View {
     @AppStorage(Key.shape) var shape = ClockShape.roundedRect
     @AppStorage(Key.cornerRadius) var cornerRadius = 6.0
-    @AppStorage(Key.bgPreset) var bgPreset = BgPreset.blackTranslucent
-    @AppStorage(Key.bgColor) var bgColor = "00000099"
-    @AppStorage(Key.textMode) var textMode = TextColorMode.auto
-    @AppStorage(Key.textColor) var textColor = "FFFFFFFF"
+    @AppStorage(Key.separateAppearance) var separate = false
+    @AppStorage("styleEditingDark") var editingDark = Prefs.systemIsDark
     @AppStorage(Key.fontSize) var fontSize = 13.0
     @AppStorage(Key.weight) var weight = FontWeight.medium
 
@@ -172,19 +243,14 @@ struct StyleTab: View {
             } header: { Text("Shape") }
 
             Section {
-                LabeledContent("Background") {
-                    HStack(spacing: 8) {
-                        ForEach(BgPreset.allCases.filter { $0 != .custom }) { p in swatch(p) }
-                    }
+                Toggle("Separate colors for light and dark mode", isOn: $separate)
+                if separate {
+                    Picker("Editing", selection: $editingDark) {
+                        Text("Light mode").tag(false)
+                        Text("Dark mode").tag(true)
+                    }.pickerStyle(.segmented)
                 }
-                ColorPicker("Custom background", selection: hexBinding($bgColor, onSet: { bgPreset = .custom }), supportsOpacity: true)
-                Picker("Text color", selection: $textMode) {
-                    Text("Automatic").tag(TextColorMode.auto)
-                    Text("Custom").tag(TextColorMode.custom)
-                }.pickerStyle(.segmented)
-                if textMode == .custom {
-                    ColorPicker("Custom text color", selection: hexBinding($textColor), supportsOpacity: true)
-                }
+                ColorsEditor(dark: separate && editingDark).id(separate && editingDark)
             } header: { Text("Colors") }
 
             Section {
@@ -199,12 +265,45 @@ struct StyleTab: View {
         }
         .formStyle(.grouped)
     }
+}
+
+/// Background + text color for one appearance (light-mode keys, or the *Dark variants).
+struct ColorsEditor: View {
+    let dark: Bool
+    @AppStorage var bgPreset: BgPreset
+    @AppStorage var bgColor: String
+    @AppStorage var textMode: TextColorMode
+    @AppStorage var textColor: String
+
+    init(dark: Bool) {
+        self.dark = dark
+        _bgPreset = AppStorage(wrappedValue: .blackTranslucent, Key.themed(Key.bgPreset, dark: dark))
+        _bgColor = AppStorage(wrappedValue: "00000099", Key.themed(Key.bgColor, dark: dark))
+        _textMode = AppStorage(wrappedValue: .auto, Key.themed(Key.textMode, dark: dark))
+        _textColor = AppStorage(wrappedValue: "FFFFFFFF", Key.themed(Key.textColor, dark: dark))
+    }
+
+    var body: some View {
+        LabeledContent("Background") {
+            HStack(spacing: 8) {
+                ForEach(BgPreset.allCases.filter { $0 != .custom }) { p in swatch(p) }
+            }
+        }
+        ColorPicker("Custom background", selection: hexBinding($bgColor, onSet: { bgPreset = .custom }), supportsOpacity: true)
+        Picker("Text color", selection: $textMode) {
+            Text("Automatic").tag(TextColorMode.auto)
+            Text("Custom").tag(TextColorMode.custom)
+        }.pickerStyle(.segmented)
+        if textMode == .custom {
+            ColorPicker("Custom text color", selection: hexBinding($textColor), supportsOpacity: true)
+        }
+    }
 
     func swatch(_ p: BgPreset) -> some View {
         Button { bgPreset = p } label: {
             ZStack {
                 Checkerboard().clipShape(Circle())
-                if let c = p.color { Circle().fill(Color(nsColor: c)) }
+                if let c = p.color(customHex: bgColor) { Circle().fill(Color(nsColor: c)) }
                 if p == .none { Image(systemName: "slash.circle").font(.system(size: 20, weight: .light)).foregroundStyle(.secondary) }
             }
             .frame(width: 24, height: 24)

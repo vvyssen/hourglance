@@ -25,14 +25,16 @@ Open **Settings…** from the menu bar icon, ⌥-click the clock, or open Hourgl
 - By default it follows the system time format: 12/24-hour (System Settings › Date & Time), plus seconds and AM/PM (Control Center › Clock Options). Changes are picked up within about 2 seconds, with no restart.
 - The default shows only the time. Weekday and date are opt-in.
 - Date formats: system/locale, `2026-11-23`, `2026/11/23`, `11/23`, `23/11`, `11/23/2026`, `23/11/2026`, `Nov 23`, `23 Nov`, or your own Unicode pattern. You can also choose whether the date goes before or after the time.
-- The time zone always follows macOS, including when you travel.
+- Time zone: follows macOS by default, including when you travel. You can also pick any zone from a searchable list (city, region, abbreviation or `UTC+8`).
+- Optionally show the time zone name: abbreviation (`EST`, `GMT+8`), city (`Tokyo`, localized), UTC offset (`UTC+5:30`), or full name (`Singapore Standard Time`).
 
 **Style**
 - Shape: rounded rectangle (adjustable radius) or capsule.
 - Background presets: translucent black (default), black, graphite, translucent white, blue, amber, green, or none (bare text with a shadow). There's also a color picker with opacity.
 - Text color: automatic contrast or custom.
+- **Separate colors for light and dark mode** (optional). The clock follows the system appearance live.
 - Font size from 10 to 24 pt, and four weights.
-- A live preview shows the result on a light and a dark backdrop.
+- A live preview shows the result on a light and a dark backdrop, or in light and dark mode when separate colors are on.
 
 **General**
 - When to show it: only when the menu bar is hidden, or always. Pick any of the four corners.
