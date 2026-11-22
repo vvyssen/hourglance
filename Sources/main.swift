@@ -1,4 +1,4 @@
-// CornerClock — a tiny clock that sits in a screen corner when the menu bar is hidden
+// Hourglance — a tiny clock that sits in a screen corner when the menu bar is hidden
 // (fullscreen apps, or "Automatically hide and show the menu bar").
 // Single file, AppKit only. Build with ./build.sh.
 
@@ -170,7 +170,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ n: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.image = NSImage(systemSymbolName: "clock", accessibilityDescription: "CornerClock")
+        statusItem.button?.image = NSImage(systemSymbolName: "clock", accessibilityDescription: "Hourglance")
         let menu = NSMenu()
         menu.delegate = self
         statusItem.menu = menu
@@ -301,9 +301,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             do {
                 if SMAppService.mainApp.status == .enabled { try SMAppService.mainApp.unregister() }
                 else { try SMAppService.mainApp.register() }
-            } catch { NSLog("CornerClock: launch at login failed: \(error)") }
+            } catch { NSLog("Hourglance: launch at login failed: \(error)") }
         }
-        menu.addItem(NSMenuItem(title: "Quit CornerClock", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: "Quit Hourglance", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
 }
 

@@ -1,6 +1,6 @@
-# CornerClock
+# Hourglance · 一瞥
 
-A tiny open-source macOS clock that appears in a screen corner **only when the menu bar is hidden**: in fullscreen apps, or with *Automatically hide and show the menu bar* on. When the menu bar comes back, the clock goes away. It's a free alternative to [Corner Time](https://apps.apple.com/app/id6746757189).
+*Hour + glance.* A tiny open-source macOS clock that appears in a screen corner **only when the menu bar is hidden**: in fullscreen apps, or with *Automatically hide and show the menu bar* on. When the menu bar comes back, the clock goes away. It's an open-source alternative to [Corner Time](https://apps.apple.com/app/id6746757189).
 
 - On MacBooks with a notch, it sits in the black strip beside the notch, so it covers nothing.
 - Click-through: it never takes clicks or focus from the app underneath, and it fades out when the mouse gets close.
@@ -11,8 +11,8 @@ A tiny open-source macOS clock that appears in a screen corner **only when the m
 
 ```sh
 ./build.sh                       # needs only the Command Line Tools: xcode-select --install
-cp -R build/CornerClock.app /Applications/
-open /Applications/CornerClock.app
+cp -R build/Hourglance.app /Applications/
+open /Applications/Hourglance.app
 ```
 
 Settings live in the ⏰ menu bar icon (reachable whenever the menu bar is visible):
@@ -28,7 +28,7 @@ Settings live in the ⏰ menu bar icon (reachable whenever the menu bar is visib
 
 ## How it detects a hidden menu bar
 
-Every display's menu bar is a WindowServer window at `kCGMainMenuWindowLevel`. When the menu bar hides, because a fullscreen Space is active or auto-hide kicked in, that window slides above the top edge of the screen and leaves the on-screen window list. CornerClock polls `CGWindowListCopyWindowInfo` four times a second. It reads only the owner, layer and bounds, which need no Screen Recording permission. For each display it checks whether any part of a menu bar window is inside that display, and shows or hides the clock to match. The check also catches the auto-hide slide-in animation, so the clock is already gone by the time the real menu bar arrives.
+Every display's menu bar is a WindowServer window at `kCGMainMenuWindowLevel`. When the menu bar hides, because a fullscreen Space is active or auto-hide kicked in, that window slides above the top edge of the screen and leaves the on-screen window list. Hourglance polls `CGWindowListCopyWindowInfo` four times a second. It reads only the owner, layer and bounds, which need no Screen Recording permission. For each display it checks whether any part of a menu bar window is inside that display, and shows or hides the clock to match. The check also catches the auto-hide slide-in animation, so the clock is already gone by the time the real menu bar arrives.
 
 Idle CPU is under 1% on Apple Silicon.
 
