@@ -2,14 +2,26 @@
 
 # Hourglance · 一瞥
 
+English · [简体中文](README.zh-CN.md)
+
 *Hour + glance.* A tiny open-source macOS clock that appears in a screen corner **only when the menu bar is hidden**: in fullscreen apps, or with *Automatically hide and show the menu bar* on. When the menu bar comes back, the clock goes away. It's an open-source alternative to [Corner Time](https://apps.apple.com/app/id6746757189).
 
 - On MacBooks with a notch, it sits in the black strip beside the notch, so it covers nothing.
 - Click-through: it never takes clicks or focus from the app underneath, and it fades out when the mouse gets close.
 - Each display is handled on its own (separate Spaces, one fullscreen and one not, etc.).
-- One Swift file with no dependencies. It needs no Xcode and no permissions (no Screen Recording, no Accessibility).
+- Plain Swift with no dependencies. It needs no Xcode and no permissions (no Screen Recording, no Accessibility).
 
 ## Install
+
+Download `Hourglance-x.y.z.zip` from the [latest release](https://github.com/vvyssen/hourglance/releases/latest), unzip it, and drag **Hourglance.app** into Applications. It's a universal app (Apple Silicon and Intel) for macOS 13 or later.
+
+The app isn't notarized by Apple, so macOS blocks the first launch. Go to **System Settings › Privacy & Security** and click **Open Anyway**, or run:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Hourglance.app
+```
+
+Or build it yourself:
 
 ```sh
 ./build.sh                       # needs only the Command Line Tools: xcode-select --install
