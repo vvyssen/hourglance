@@ -14,10 +14,17 @@ enum MenuBar {
     private static var heightCache: [CGRect]?
     static func invalidateHeights() { heightCache = nil }
 
+    /// Window numbers that are really on screen right now (in the active Space of every display),
+    /// filled by the last `states(for:)` call.
+    private(set) static var onScreenWindows: Set<Int> = []
+
     static func states(for screens: [NSScreen]) -> [NSScreen: State] {
         let level = Int(CGWindowLevelForKey(.mainMenuWindow))
         func bars(_ opt: CGWindowListOption) -> [CGRect] {
             let list = CGWindowListCopyWindowInfo(opt, kCGNullWindowID) as? [[String: Any]] ?? []
+            if opt.contains(.optionOnScreenOnly) {
+                onScreenWindows = Set(list.compactMap { $0[kCGWindowNumber as String] as? Int })
+            }
             return list.compactMap { w in
                 guard (w[kCGWindowOwnerName as String] as? String) == "Window Server",
                       (w[kCGWindowLayer as String] as? Int) == level,

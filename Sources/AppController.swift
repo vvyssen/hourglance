@@ -141,7 +141,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             panels[screen] = panel
             let barHeight = state.height ?? max(screen.safeAreaInsets.top, NSStatusBar.system.thickness)
             panel.layout(text: text, on: screen, menuBarHeight: barHeight, styleVersion: styleVersion)
-            if !panel.isVisible { panel.alphaValue = targetAlpha(panel); panel.orderFrontRegardless() }
+            // `isVisible` stays true after the first orderFront, but a fullscreen Space created later
+            // (an app going fullscreen, Split View) doesn't always pick the panel up. Ask the Window
+            // Server whether it is really on screen, and order it in again when it isn't.
+            if !panel.isVisible || !MenuBar.onScreenWindows.contains(panel.windowNumber) {
+                if !panel.isVisible { panel.alphaValue = targetAlpha(panel) }
+                panel.orderFrontRegardless()
+            }
         }
         updateInteraction()
     }
