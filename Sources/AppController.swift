@@ -10,8 +10,18 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var systemPrefs = SystemClockPrefs.read()
     var styleVersion = 0
     var tickTimer: Timer?
-    var pollTimer: Timer?
     var nearTimer: Timer?
+    var watchTimer: Timer?
+    var watchUntil = Date.distantPast
+    var watchTicks = 0
+    var lastStates: [NSScreen: MenuBar.State] = [:]
+    /// Screens where the pointer touched the top edge while the menu bar was hidden (fullscreen or
+    /// auto-hide), since the last Space change. A visible bar there is only revealed for a moment.
+    /// (Not taken from the window list: Space animations show bars hidden for an instant.)
+    var hidesHere: Set<NSScreen> = []
+    var revealedSince: [NSScreen: Date] = [:]
+    var pointerZone = PointerZone.below
+    var settingsFrontmost = false
     var monitors: [Any] = []
     var appearanceObservation: NSKeyValueObservation?
     var settingsWindow: NSWindow?
@@ -41,38 +51,29 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         nc.addObserver(self, selector: #selector(systemFormatChanged), name: NSLocale.currentLocaleDidChangeNotification, object: nil)
         nc.addObserver(self, selector: #selector(systemFormatChanged), name: .NSSystemTimeZoneDidChange, object: nil)
         nc.addObserver(self, selector: #selector(systemFormatChanged), name: .NSSystemClockDidChange, object: nil)
-        wnc.addObserver(self, selector: #selector(refresh), name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
-        wnc.addObserver(self, selector: #selector(refresh), name: NSWorkspace.didActivateApplicationNotification, object: nil)
+        wnc.addObserver(self, selector: #selector(spaceChanged), name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+        wnc.addObserver(self, selector: #selector(appActivated), name: NSWorkspace.didActivateApplicationNotification, object: nil)
         wnc.addObserver(self, selector: #selector(systemFormatChanged), name: NSWorkspace.didWakeNotification, object: nil)
 
-        // Menu bar can slide in/out at any time (auto-hide): poll cheaply. Every ~2 s also re-read
-        // the system clock settings (Control Center has no change notification for them).
-        var n = 0
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            n += 1
-            if n % 8 == 0 { self.checkSystemPrefs() }
-            self.refresh()
-        }
-        pollTimer?.tolerance = 0.05
         scheduleTick()
 
         monitors.append(NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] _ in
-            self?.updateInteraction()
+            self?.pointerMoved()
         } as Any)
         monitors.append(NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .flagsChanged]) { [weak self] e in
-            self?.updateInteraction(); return e
+            self?.pointerMoved(); return e
         } as Any)
 
         HotKey.shared.handler = { [weak self] in self?.toggleHidden() }
         applyPrefs()
+        watch()
 
         AppIcon.apply()
         appearanceObservation = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in
             DispatchQueue.main.async {
                 AppIcon.apply()
                 self?.styleVersion += 1      // light/dark colors may differ
-                self?.refresh()
+                self?.refresh(checkBars: false)
             }
         }
     }
@@ -93,7 +94,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.isVisible = Prefs.showStatusItem
         if Prefs.hotKeyEnabled { HotKey.shared.register(keyCode: Prefs.hotKeyCode, modifiers: Prefs.hotKeyMods) }
         else { HotKey.shared.unregister() }
-        refresh()
+        scheduleTick()
+        watch()
     }
 
     @objc func systemFormatChanged() {
@@ -101,7 +103,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         systemPrefs = SystemClockPrefs.read()
         format.rebuild(system: systemPrefs)
         styleVersion += 1
-        refresh()
+        scheduleTick()
+        watch()
     }
 
     func checkSystemPrefs() {
@@ -109,23 +112,106 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if now != systemPrefs { systemFormatChanged() }
     }
 
-    @objc func screensChanged() { MenuBar.invalidateHeights(); refresh() }
+    @objc func screensChanged() { MenuBar.invalidateHeights(); hidesHere = []; watch() }
+
+    // MARK: Watching the menu bar
+    //
+    // There is no notification for a menu bar sliding in or out, so the Window Server's window list
+    // is read only around the moments it can change, then left alone:
+    //  - Space changes (an app entering/leaving fullscreen, Split View): this is what puts the clock
+    //    into a new fullscreen Space. Also app switches, display changes, wake. Check for a moment,
+    //    through the animation.
+    //  - A hidden bar only slides in when the pointer touches the top edge of its screen: check while
+    //    the pointer is there.
+    //  - A bar the pointer revealed that way is only out for a moment: check until it hides again.
+    //  - While System Settings is frontmost (auto-hide or clock format may change), check each second.
+    //  - Once a minute as a fallback, with the clock tick.
+
+    enum PointerZone { case edge, bar, below }
+
+    @objc func spaceChanged() { hidesHere = []; revealedSince = [:]; watch() }
+
+    @objc func appActivated(_ n: Notification) {
+        let app = n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+        settingsFrontmost = app?.bundleIdentifier == "com.apple.systempreferences"
+        checkSystemPrefs()      // System Settings may just have been left
+        watch()
+    }
+
+    /// Checks now, then several times a second until `seconds` have passed and nothing else needs it.
+    func watch(for seconds: TimeInterval = 1.5) {
+        refresh()
+        watchUntil = max(watchUntil, Date().addingTimeInterval(seconds))
+        guard watchTimer == nil, needsWatching() else { return }
+        watchTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] t in
+            guard let self else { return }
+            self.watchTicks += 1
+            if self.settingsFrontmost && self.watchTicks % 7 == 0 { self.checkSystemPrefs() }
+            self.refresh()
+            if !self.needsWatching() { t.invalidate(); self.watchTimer = nil }
+        }
+        watchTimer?.tolerance = 0.03
+    }
+
+    func needsWatching() -> Bool {
+        if Date() < watchUntil || settingsFrontmost || pointerZone == .edge { return true }
+        // Revealed for a moment. Give up after 20 s (someone browsing a menu, or a bar that only looked
+        // hidden mid-animation); leaving the bar with the pointer or the minute tick catches the rest.
+        let now = Date()
+        for s in hidesHere {
+            guard lastStates[s]?.visible == true else { revealedSince[s] = nil; continue }
+            let since = revealedSince[s] ?? now
+            revealedSince[s] = since
+            if now.timeIntervalSince(since) < 20 { return true }
+        }
+        return false
+    }
+
+    func pointerMoved() {
+        updateInteraction()
+        let p = NSEvent.mouseLocation
+        var zone = PointerZone.below
+        if let s = NSScreen.screens.first(where: { p.x >= $0.frame.minX && p.x <= $0.frame.maxX && p.y >= $0.frame.minY && p.y <= $0.frame.maxY }) {
+            let fromTop = s.frame.maxY - p.y
+            let bar = lastStates[s]?.height ?? max(s.safeAreaInsets.top, NSStatusBar.system.thickness)
+            if fromTop <= 3 && lastStates[s]?.visible == false { zone = .edge; hidesHere.insert(s) }
+            else if fromTop <= bar + 2 { zone = .bar }
+        }
+        guard zone != pointerZone else { return }
+        pointerZone = zone
+        watch()
+    }
 
     // MARK: Clock
 
-    // Fire exactly on each second boundary so the seconds digit is never late.
+    /// Fires on the next second boundary when seconds are shown, otherwise on the next minute, so the
+    /// digits are never late and the app sleeps in between. The minute tick also re-checks the menu bars.
     func scheduleTick() {
-        let next = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970) + 1.0005)
+        tickTimer?.invalidate()
+        let now = Date().timeIntervalSince1970
+        let step: Double = format.hasSeconds ? 1 : 60
+        let next = Date(timeIntervalSince1970: (floor(now / step) + 1) * step + 0.0005)
         tickTimer = Timer(fire: next, interval: 0, repeats: false) { [weak self] _ in
-            self?.refresh(); self?.scheduleTick()
+            guard let self else { return }
+            let minute = Int(Date().timeIntervalSince1970) % 60 == 0
+            self.refresh(checkBars: minute && self.watchTimer == nil)
+            self.scheduleTick()
         }
+        tickTimer?.tolerance = 0.002
         RunLoop.main.add(tickTimer!, forMode: .common)
     }
 
-    @objc func refresh() {
+    @objc func refresh() { refresh(checkBars: true) }
+
+    /// `checkBars: false` only redraws the text, reusing the last menu bar states.
+    func refresh(checkBars: Bool) {
         if let t = hiddenUntil, t <= Date() { hiddenUntil = nil }
         let screens = NSScreen.screens
-        let states = MenuBar.states(for: screens)
+        let checkBars = checkBars || screens.contains { lastStates[$0] == nil }
+        if checkBars {
+            lastStates = MenuBar.states(for: screens)
+        }
+        let states = lastStates
         let text = format.string(from: Date())
         let disabled = Prefs.disabledScreens, always = Prefs.showMode == .always, hidden = isTemporarilyHidden
 
@@ -144,7 +230,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // `isVisible` stays true after the first orderFront, but a fullscreen Space created later
             // (an app going fullscreen, Split View) doesn't always pick the panel up. Ask the Window
             // Server whether it is really on screen, and order it in again when it isn't.
-            if !panel.isVisible || !MenuBar.onScreenWindows.contains(panel.windowNumber) {
+            if !panel.isVisible || (checkBars && !MenuBar.onScreenWindows.contains(panel.windowNumber)) {
                 if !panel.isVisible { panel.alphaValue = targetAlpha(panel) }
                 panel.orderFrontRegardless()
             }
@@ -197,9 +283,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: Hide / show
 
     func hide(for minutes: Double?) {
-        if let m = minutes { hiddenUntil = Date().addingTimeInterval(m * 60); hiddenIndefinitely = false }
+        if let m = minutes {
+            hiddenUntil = Date().addingTimeInterval(m * 60); hiddenIndefinitely = false
+            Timer.scheduledTimer(withTimeInterval: m * 60 + 0.05, repeats: false) { [weak self] _ in self?.refresh() }
+        }
         else { hiddenIndefinitely = true; hiddenUntil = nil }
-        refresh()
+        refresh(checkBars: false)
     }
 
     func showAgain() { hiddenIndefinitely = false; hiddenUntil = nil; refresh() }

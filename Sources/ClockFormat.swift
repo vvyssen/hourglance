@@ -30,6 +30,8 @@ final class ClockFormat {
     private var zoneStyle: ZoneStyle?
     private var hasDate = false
     private var dateFirst = true
+    /// Whether the text changes every second (otherwise only on minute boundaries).
+    private(set) var hasSeconds = false
 
     init() { rebuild() }
 
@@ -52,6 +54,7 @@ final class ClockFormat {
         let seconds = Prefs.followSystem ? system.seconds : Prefs.seconds
         let ampm = Prefs.followSystem ? system.ampm : Prefs.ampm
         var tpl = is24 ? "HHmm" : (ampm ? "hmma" : "hmm")
+        hasSeconds = seconds
         if seconds { tpl += "ss" }
         var pattern = DateFormatter.dateFormat(fromTemplate: tpl, options: 0, locale: loc) ?? "HH:mm"
         if !is24 {
