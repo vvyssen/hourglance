@@ -1,5 +1,8 @@
 import Cocoa
 import SwiftUI
+import os
+
+private let log = Logger(subsystem: "io.github.vvyssen.hourglance", category: "spaces")
 
 final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     static private(set) var shared: AppController!
@@ -22,6 +25,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var revealedSince: [NSScreen: Date] = [:]
     var pointerZone = PointerZone.below
     var settingsFrontmost = false
+    /// When each kind of event last happened, to explain a panel found missing from the screen.
+    var lastEvents: [String: Date] = [:]
+    func note(_ e: String) { lastEvents[e] = Date() }
     var monitors: [Any] = []
     var appearanceObservation: NSKeyValueObservation?
     var settingsWindow: NSWindow?
@@ -99,6 +105,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func systemFormatChanged() {
+        note("wake/format")
         NSTimeZone.resetSystemTimeZone()
         systemPrefs = SystemClockPrefs.read()
         format.rebuild(system: systemPrefs)
@@ -112,7 +119,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if now != systemPrefs { systemFormatChanged() }
     }
 
-    @objc func screensChanged() { MenuBar.invalidateHeights(); hidesHere = []; watch() }
+    @objc func screensChanged() { note("screens"); MenuBar.invalidateHeights(); hidesHere = []; watch() }
 
     // MARK: Watching the menu bar
     //
@@ -129,7 +136,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     enum PointerZone { case edge, bar, below }
 
-    @objc func spaceChanged() { hidesHere = []; revealedSince = [:]; watch() }
+    @objc func spaceChanged() { note("space"); hidesHere = []; revealedSince = [:]; watch() }
 
     @objc func appActivated(_ n: Notification) {
         let app = n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
@@ -230,7 +237,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // `isVisible` stays true after the first orderFront, but a fullscreen Space created later
             // (an app going fullscreen, Split View) doesn't always pick the panel up. Ask the Window
             // Server whether it is really on screen, and order it in again when it isn't.
-            if !panel.isVisible || (checkBars && !MenuBar.onScreenWindows.contains(panel.windowNumber)) {
+            let lost = panel.isVisible && checkBars && !MenuBar.onScreenWindows.contains(panel.windowNumber)
+            if lost {
+                // Diagnostics: a panel that is ordered in but not on screen. Read with
+                // log show --last 1d --predicate 'subsystem == "io.github.vvyssen.hourglance"'
+                let ago = lastEvents.map { "\($0.key) \(String(format: "%.1f", -$0.value.timeIntervalSinceNow))s" }.sorted().joined(separator: ", ")
+                log.notice("panel off screen on \(screen.localizedName, privacy: .public); since: \(ago, privacy: .public)")
+            }
+            if !panel.isVisible || lost {
                 if !panel.isVisible { panel.alphaValue = targetAlpha(panel) }
                 panel.orderFrontRegardless()
             }
