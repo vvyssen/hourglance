@@ -3,9 +3,14 @@ import Carbon
 
 // MARK: - Menu bar detection
 
-/// Each display's menu bar is a Window Server window at kCGMainMenuWindowLevel.
-/// When the menu bar is hidden (fullscreen space or auto-hide) that window is
-/// moved off the top of the screen and drops out of the on-screen window list.
+/// Each display's menu bar is a Window Server window at kCGMainMenuWindowLevel. When the menu bar is
+/// hidden it is hidden in one of two ways:
+///  - Displays without a notch (fullscreen Space or auto-hide): that window is moved off the top
+///    of the screen and drops out of the on-screen window list.
+///  - Displays with a notch, in a fullscreen Space: the window stays where it is, and MenuBarAgent
+///    covers the strip with a (black) window one layer above it. The cover goes away while the
+///    pointer reveals the menu bar.
+/// So a menu bar is visible when its window is on screen and nothing from MenuBarAgent covers it.
 /// Owner name, layer and bounds are readable without Screen Recording permission.
 enum MenuBar {
     struct State { var visible: Bool; var height: CGFloat? }
@@ -20,17 +25,20 @@ enum MenuBar {
 
     static func states(for screens: [NSScreen]) -> [NSScreen: State] {
         let level = Int(CGWindowLevelForKey(.mainMenuWindow))
+        var covers: [CGRect] = []
         func bars(_ opt: CGWindowListOption) -> [CGRect] {
             let list = CGWindowListCopyWindowInfo(opt, kCGNullWindowID) as? [[String: Any]] ?? []
-            if opt.contains(.optionOnScreenOnly) {
+            let onScreenOnly = opt.contains(.optionOnScreenOnly)
+            if onScreenOnly {
                 onScreenWindows = Set(list.compactMap { $0[kCGWindowNumber as String] as? Int })
             }
             return list.compactMap { w in
-                guard (w[kCGWindowOwnerName as String] as? String) == "Window Server",
-                      (w[kCGWindowLayer as String] as? Int) == level,
+                guard let owner = w[kCGWindowOwnerName as String] as? String,
+                      let layer = w[kCGWindowLayer as String] as? Int,
                       let b = w[kCGWindowBounds as String] as? NSDictionary,
                       let r = CGRect(dictionaryRepresentation: b), r.height < 80 else { return nil }
-                return r
+                if onScreenOnly && owner == "MenuBarAgent" && layer > level { covers.append(r); return nil }
+                return owner == "Window Server" && layer == level ? r : nil
             }
         }
         let onScreen = bars([.optionOnScreenOnly])
@@ -44,7 +52,10 @@ enum MenuBar {
             let sameColumn: (CGRect) -> Bool = { abs($0.minX - s.frame.minX) < 2 && abs($0.width - s.frame.width) < 2 }
             let height = all.first(where: sameColumn)?.height
             // Visible if any part of an on-screen menu bar reaches into this screen (includes the slide-in animation).
-            let visible = onScreen.contains { sameColumn($0) && $0.maxY > cgTop + 1 && $0.minY < cgTop + s.frame.height }
+            let visible = onScreen.contains { bar in
+                sameColumn(bar) && bar.maxY > cgTop + 1 && bar.minY < cgTop + s.frame.height
+                    && !covers.contains { sameColumn($0) && $0.minY <= bar.minY + 1 && $0.maxY >= bar.maxY - 1 }
+            }
             out[s] = State(visible: visible, height: height)
         }
         return out
