@@ -62,6 +62,47 @@ enum MenuBar {
     }
 }
 
+// MARK: - Watching preference files
+
+/// Calls `onChange` when one of the given preference files changes, through kernel file events (no
+/// polling). Other apps' settings (the menu bar clock options, 24-hour time, menu bar auto-hide) have
+/// no cross-process change notification, and KVO on UserDefaults doesn't see other processes' writes.
+/// cfprefsd replaces a plist file on each write, so the watch is re-armed on delete/rename.
+/// A file that doesn't exist yet is picked up by `rearmMissing()`.
+final class PrefsWatcher {
+    private var sources: [String: DispatchSourceFileSystemObject] = [:]
+    private let paths: [String]
+    private let onChange: () -> Void
+    private var pending = false
+
+    init(files: [String], onChange: @escaping () -> Void) {
+        paths = files.map { NSHomeDirectory() + "/Library/Preferences/" + $0 }
+        self.onChange = onChange
+        rearmMissing()
+    }
+
+    func rearmMissing() { for p in paths where sources[p] == nil { arm(p) } }
+
+    private func arm(_ path: String) {
+        let fd = open(path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        let src = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .extend, .delete, .rename], queue: .main)
+        src.setEventHandler { [weak self] in
+            guard let self else { return }
+            if !src.data.isDisjoint(with: [.delete, .rename]) {
+                src.cancel(); self.sources[path] = nil
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { self.arm(path) }   // the new file
+            }
+            guard !self.pending else { return }
+            self.pending = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { self.pending = false; self.onChange() }
+        }
+        src.setCancelHandler { close(fd) }
+        src.resume()
+        sources[path] = src
+    }
+}
+
 // MARK: - App icon follows light / dark appearance
 
 /// The bundle's own icon (Hourglance.icns) is the light-mode one. In dark mode the app sets

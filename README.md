@@ -34,7 +34,7 @@ Open **Settings…** from the menu bar icon, ⌥-click the clock, or open Hourgl
 ## Settings
 
 **Time**
-- By default it follows the system time format: 12/24-hour (System Settings › Date & Time), plus seconds and AM/PM (Control Center › Clock Options). Changes are picked up within about 2 seconds, with no restart.
+- By default it follows the system time format: 12/24-hour (System Settings › Date & Time), plus seconds and AM/PM (Control Center › Clock Options). Changes are picked up right away, with no restart.
 - The default shows only the time. Weekday and date are opt-in.
 - Date formats: system/locale, `2026-11-23`, `2026/11/23`, `11/23`, `23/11`, `11/23/2026`, `23/11/2026`, `Nov 23`, `23 Nov`, or your own Unicode pattern. You can also choose whether the date goes before or after the time.
 - Time zone: follows macOS by default, including when you travel. You can also pick any zone from a searchable list (city, region, abbreviation or `UTC+8`).
@@ -57,9 +57,11 @@ Open **Settings…** from the menu bar icon, ⌥-click the clock, or open Hourgl
 
 ## How it detects a hidden menu bar
 
-Every display's menu bar is a WindowServer window at `kCGMainMenuWindowLevel`. When the menu bar hides, because a fullscreen Space is active or auto-hide kicked in, that window slides above the top edge of the screen and leaves the on-screen window list. Hourglance polls `CGWindowListCopyWindowInfo` four times a second. It reads only the owner, layer and bounds, which need no Screen Recording permission. For each display it checks whether any part of a menu bar window is inside that display, and shows or hides the clock to match. The check also catches the auto-hide slide-in animation, so the clock is already gone by the time the real menu bar arrives.
+Every display's menu bar is a WindowServer window at `kCGMainMenuWindowLevel`. A menu bar hides in one of two ways. On a display without a notch (a fullscreen Space, or auto-hide), that window slides above the top edge and leaves the on-screen window list. On a display with a notch, in a fullscreen Space, the window stays put and MenuBarAgent covers the strip with a black window one layer up; the cover goes away while the pointer reveals the menu bar. So a menu bar counts as visible when its window is on screen and nothing from MenuBarAgent covers it. Hourglance reads this from `CGWindowListCopyWindowInfo`, using only the owner, layer and bounds, which need no Screen Recording permission.
 
-Idle CPU is under 1% on Apple Silicon.
+macOS has no notification for a menu bar sliding in or out, so the window list is read only around the moments it can change: for a moment after a Space change, an app switch, a display change or wake; while the pointer sits on the top edge of a display whose menu bar is hidden, and until a menu bar revealed that way hides again; and once a minute as a fallback. Changes to the system clock format and to auto-hide arrive as file events on their preference files. The pointer is only followed while a clock is showing or a menu bar is hidden, so on a normal desktop moving the mouse doesn't wake Hourglance at all.
+
+Between these moments Hourglance only wakes to update the time, and idle CPU is effectively zero.
 
 ## Known limits
 

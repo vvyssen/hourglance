@@ -16,7 +16,6 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var nearTimer: Timer?
     var watchTimer: Timer?
     var watchUntil = Date.distantPast
-    var watchTicks = 0
     var lastStates: [NSScreen: MenuBar.State] = [:]
     /// Screens where the pointer touched the top edge while the menu bar was hidden (fullscreen or
     /// auto-hide), since the last Space change. A visible bar there is only revealed for a moment.
@@ -24,7 +23,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var hidesHere: Set<NSScreen> = []
     var revealedSince: [NSScreen: Date] = [:]
     var pointerZone = PointerZone.below
-    var settingsFrontmost = false
+    var mouseMonitor: Any?
+    var prefsWatcher: PrefsWatcher?
     /// When each kind of event last happened, to explain a panel found missing from the screen.
     var lastEvents: [String: Date] = [:]
     func note(_ e: String) { lastEvents[e] = Date() }
@@ -63,9 +63,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         scheduleTick()
 
-        monitors.append(NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] _ in
-            self?.pointerMoved()
-        } as Any)
+        // The menu bar clock options and the global domain (24-hour time, menu bar auto-hide).
+        prefsWatcher = PrefsWatcher(files: ["com.apple.menuextra.clock.plist", ".GlobalPreferences.plist"]) { [weak self] in
+            self?.checkSystemPrefs(); self?.watch()
+        }
         monitors.append(NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .flagsChanged]) { [weak self] e in
             self?.pointerMoved(); return e
         } as Any)
@@ -131,7 +132,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     //  - A hidden bar only slides in when the pointer touches the top edge of its screen: check while
     //    the pointer is there.
     //  - A bar the pointer revealed that way is only out for a moment: check until it hides again.
-    //  - While System Settings is frontmost (auto-hide or clock format may change), check each second.
+    //  - The system's clock / auto-hide settings change: a file event on their preference files.
     //  - Once a minute as a fallback, with the clock tick.
 
     enum PointerZone { case edge, bar, below }
@@ -139,9 +140,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func spaceChanged() { note("space"); hidesHere = []; revealedSince = [:]; watch() }
 
     @objc func appActivated(_ n: Notification) {
-        let app = n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-        settingsFrontmost = app?.bundleIdentifier == "com.apple.systempreferences"
-        checkSystemPrefs()      // System Settings may just have been left
+        // Some apps hide the menu bar while active (presentation modes) without changing Space.
+        prefsWatcher?.rearmMissing()
         watch()
     }
 
@@ -152,8 +152,6 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard watchTimer == nil, needsWatching() else { return }
         watchTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] t in
             guard let self else { return }
-            self.watchTicks += 1
-            if self.settingsFrontmost && self.watchTicks % 7 == 0 { self.checkSystemPrefs() }
             self.refresh()
             if !self.needsWatching() { t.invalidate(); self.watchTimer = nil }
         }
@@ -161,7 +159,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func needsWatching() -> Bool {
-        if Date() < watchUntil || settingsFrontmost || pointerZone == .edge { return true }
+        if Date() < watchUntil || pointerZone == .edge { return true }
         // Revealed for a moment. Give up after 20 s (someone browsing a menu, or a bar that only looked
         // hidden mid-animation); leaving the bar with the pointer or the minute tick catches the rest.
         let now = Date()
@@ -249,7 +247,23 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 panel.orderFrontRegardless()
             }
         }
+        updateMouseMonitor()
         updateInteraction()
+    }
+
+    /// Follows the pointer only while something depends on it: a clock is showing (hover fade,
+    /// modifier-click), or a menu bar is hidden or only revealed for a moment (top-edge reveal). On a
+    /// plain desktop with every menu bar visible, mouse movement doesn't wake the app at all.
+    func updateMouseMonitor() {
+        let needed = panels.values.contains { $0.isVisible } || lastStates.values.contains { !$0.visible } || !hidesHere.isEmpty
+        if needed, mouseMonitor == nil {
+            mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] _ in
+                self?.pointerMoved()
+            }
+        } else if !needed, let m = mouseMonitor {
+            NSEvent.removeMonitor(m); mouseMonitor = nil
+            pointerZone = .below
+        }
     }
 
     func makePanel() -> ClockPanel {
