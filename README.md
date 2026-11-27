@@ -13,7 +13,7 @@ English · [简体中文](README.zh-CN.md)
 
 ## Install
 
-Download `Hourglance-x.y.z.zip` from the [latest release](https://github.com/vvyssen/hourglance/releases/latest), unzip it, and drag **Hourglance.app** into Applications. It's a universal app (Apple Silicon and Intel) for macOS 13 or later.
+Download `Hourglance-x.y.z.dmg` from the [latest release](https://github.com/vvyssen/hourglance/releases/latest), open it, and drag **Hourglance** onto the **Applications** folder next to it. (A `.zip` is there too if you prefer.) It's a universal app (Apple Silicon and Intel) for macOS 13 or later.
 
 The app isn't notarized by Apple, so macOS blocks the first launch. Go to **System Settings › Privacy & Security** and click **Open Anyway**, or run:
 
@@ -25,6 +25,7 @@ Or build it yourself:
 
 ```sh
 ./build.sh                       # needs only the Command Line Tools: xcode-select --install
+scripts/make-dmg.sh              # optional: the installer DMG in dist/ (pip install dmgbuild)
 cp -R build/Hourglance.app /Applications/
 open /Applications/Hourglance.app
 ```

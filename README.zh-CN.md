@@ -13,7 +13,7 @@
 
 ## 安装
 
-从[最新版本](https://github.com/vvyssen/hourglance/releases/latest)下载 `Hourglance-x.y.z.zip`，解压后把 **Hourglance.app** 拖进「应用程序」。通用版，Apple 芯片和 Intel 都能用，要求 macOS 13 及以上。
+从[最新版本](https://github.com/vvyssen/hourglance/releases/latest)下载 `Hourglance-x.y.z.dmg`，打开后把 **Hourglance** 拖到旁边的「应用程序」文件夹上。（也提供 `.zip`。）通用版，Apple 芯片和 Intel 都能用，要求 macOS 13 及以上。
 
 App 没有经过 Apple 公证，第一次打开会被系统拦下。到「系统设置 › 隐私与安全性」点「仍要打开」，或在终端运行：
 
@@ -25,6 +25,7 @@ xattr -dr com.apple.quarantine /Applications/Hourglance.app
 
 ```sh
 ./build.sh                       # 只需要命令行工具：xcode-select --install
+scripts/make-dmg.sh              # 可选：在 dist/ 里生成安装用 DMG（pip install dmgbuild）
 cp -R build/Hourglance.app /Applications/
 open /Applications/Hourglance.app
 ```

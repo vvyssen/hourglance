@@ -27,17 +27,18 @@ jobs:
       - run: swiftc --version && ./build.sh
       - name: Package
         run: |
-          mkdir dist
+          python3 -m venv .dmgvenv && .dmgvenv/bin/pip install --quiet dmgbuild
+          DMGBUILD=.dmgvenv/bin/dmgbuild scripts/make-dmg.sh "$V"
           ditto -c -k --sequesterRsrc --keepParent build/Hourglance.app "dist/Hourglance-$V.zip"
-          (cd dist && shasum -a 256 "Hourglance-$V.zip" > "Hourglance-$V.zip.sha256")
+          (cd dist && for f in "Hourglance-$V.dmg" "Hourglance-$V.zip"; do shasum -a 256 "$f" > "$f.sha256"; done)
       - name: Release notes
         run: |
           git tag -l --format='%(contents:body)' "$TAG" > notes.md
           cat >> notes.md <<NOTES
 
           ## Install · 安装
-          1. Download **Hourglance-$V.zip**, unzip, and drag **Hourglance.app** into **Applications**.
-             下载 **Hourglance-$V.zip**，解压后把 **Hourglance.app** 拖进「应用程序」。
+          1. Download **Hourglance-$V.dmg**, open it, and drag **Hourglance** onto the **Applications** folder. (Or use the .zip: unzip and move the app to Applications.)
+             下载 **Hourglance-$V.dmg**，打开后把 **Hourglance** 拖到「应用程序」文件夹上。（也可以用 .zip：解压后把 app 放进「应用程序」。）
           2. The app is not notarized by Apple, so the first launch is blocked. Open **System Settings › Privacy & Security** and click **Open Anyway**, or run:
              App 没有经过 Apple 公证，第一次打开会被拦下。到「系统设置 › 隐私与安全性」点「仍要打开」，或在终端运行：
              \`\`\`
