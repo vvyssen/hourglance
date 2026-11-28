@@ -14,6 +14,8 @@ final class ClockPanel: NSPanel {
     let label = NSTextField(labelWithString: "")
     let box = ClickView()
     private var lastKey = ""
+    /// The frame of the screen the panel was last laid out on.
+    private(set) var screenFrame = NSRect.zero
 
     init() {
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -37,10 +39,41 @@ final class ClockPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
+    // MARK: Showing and hiding
+    //
+    // A hidden clock is only made transparent; the panel is never ordered out. When a fullscreen
+    // Space goes away (leaving fullscreen, closing the window), the Window Server takes every
+    // ordered-out window that belonged to it out of all the other Spaces too, and the window never
+    // gets them back. A panel that is ordered in stays in every Space. The clock is hidden exactly
+    // then: the menu bar is down while someone clicks the green or red button.
+
+    private(set) var isShown = false
+
+    func show(alpha: CGFloat) {
+        guard !isShown else { return }
+        isShown = true
+        setAlphaNow(alpha)
+        if !isVisible { orderFrontRegardless() }
+    }
+
+    func hide() {
+        guard isShown else { return }
+        isShown = false
+        ignoresMouseEvents = true
+        setAlphaNow(0)
+    }
+
+    /// Sets the alpha at once, ending a hover fade that is still running.
+    private func setAlphaNow(_ alpha: CGFloat) {
+        NSAnimationContext.runAnimationGroup { ctx in ctx.duration = 0; animator().alphaValue = alpha }
+        alphaValue = alpha
+    }
+
     func layout(text: String, on screen: NSScreen, menuBarHeight: CGFloat, styleVersion: Int) {
         let key = "\(text)|\(screen.frame)|\(menuBarHeight)|\(styleVersion)"
         guard key != lastKey else { return }
         lastKey = key
+        screenFrame = screen.frame
 
         let size = Prefs.fontSize, scale = size / 13
         label.font = .monospacedDigitSystemFont(ofSize: size, weight: Prefs.weight.ns)

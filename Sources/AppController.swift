@@ -1,8 +1,5 @@
 import Cocoa
 import SwiftUI
-import os
-
-private let log = Logger(subsystem: "io.github.vvyssen.hourglance", category: "spaces")
 
 final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     static private(set) var shared: AppController!
@@ -22,12 +19,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// (Not taken from the window list: Space animations show bars hidden for an instant.)
     var hidesHere: Set<NSScreen> = []
     var revealedSince: [NSScreen: Date] = [:]
+    /// Screens with a notch that haven't shown a menu bar cover since the last Space change. After a
+    /// switch to a fullscreen Space there, the cover comes on screen up to a second later than the
+    /// menu bar window it covers.
+    var awaitingCover: Set<NSScreen> = []
     var pointerZone = PointerZone.below
     var mouseMonitor: Any?
     var prefsWatcher: PrefsWatcher?
-    /// When each kind of event last happened, to explain a panel found missing from the screen.
-    var lastEvents: [String: Date] = [:]
-    func note(_ e: String) { lastEvents[e] = Date() }
     var monitors: [Any] = []
     var appearanceObservation: NSKeyValueObservation?
     var settingsWindow: NSWindow?
@@ -106,7 +104,6 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func systemFormatChanged() {
-        note("wake/format")
         NSTimeZone.resetSystemTimeZone()
         systemPrefs = SystemClockPrefs.read()
         format.rebuild(system: systemPrefs)
@@ -120,7 +117,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if now != systemPrefs { systemFormatChanged() }
     }
 
-    @objc func screensChanged() { note("screens"); MenuBar.invalidateHeights(); hidesHere = []; watch() }
+    @objc func screensChanged() {
+        MenuBar.invalidateHeights(); hidesHere = []; awaitingCover = []
+        watch()
+    }
 
     // MARK: Watching the menu bar
     //
@@ -137,7 +137,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     enum PointerZone { case edge, bar, below }
 
-    @objc func spaceChanged() { note("space"); hidesHere = []; revealedSince = [:]; watch() }
+    @objc func spaceChanged() {
+        hidesHere = []; revealedSince = [:]
+        awaitingCover = Set(NSScreen.screens.filter { $0.safeAreaInsets.top > 0 })
+        watch()
+    }
 
     @objc func appActivated(_ n: Notification) {
         // Some apps hide the menu bar while active (presentation modes) without changing Space.
@@ -215,37 +219,43 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let checkBars = checkBars || screens.contains { lastStates[$0] == nil }
         if checkBars {
             lastStates = MenuBar.states(for: screens)
+            for s in awaitingCover {
+                guard let state = lastStates[s] else { continue }
+                if state.covered {
+                    awaitingCover.remove(s)
+                } else if state.visible, state.fullscreen, !hidesHere.contains(s) {
+                    // Just arrived in a fullscreen Space and the cover isn't there yet: the bar is
+                    // hidden, unless the pointer is at the top edge revealing it.
+                    lastStates[s]?.visible = false
+                }
+            }
         }
         let states = lastStates
         let text = format.string(from: Date())
         let disabled = Prefs.disabledScreens, always = Prefs.showMode == .always, hidden = isTemporarilyHidden
 
         for (screen, panel) in panels where !screens.contains(screen) {
-            panel.orderOut(nil); panels[screen] = nil
+            panel.close(); panels[screen] = nil
         }
         for screen in screens {
             let state = states[screen] ?? .init(visible: false, height: nil)
             let show = !hidden && !disabled.contains(screen.localizedName) && (always || !state.visible)
-            guard show else { panels[screen]?.orderOut(nil); continue }
+            let barHeight = state.height ?? max(screen.safeAreaInsets.top, NSStatusBar.system.thickness)
+            guard show else {
+                // A hidden panel stays ordered in, so it has to follow its screen when that moves or resizes.
+                if let panel = panels[screen] {
+                    panel.hide()
+                    if panel.screenFrame != screen.frame {
+                        panel.layout(text: text, on: screen, menuBarHeight: barHeight, styleVersion: styleVersion)
+                    }
+                }
+                continue
+            }
 
             let panel = panels[screen] ?? makePanel()
             panels[screen] = panel
-            let barHeight = state.height ?? max(screen.safeAreaInsets.top, NSStatusBar.system.thickness)
             panel.layout(text: text, on: screen, menuBarHeight: barHeight, styleVersion: styleVersion)
-            // `isVisible` stays true after the first orderFront, but a fullscreen Space created later
-            // (an app going fullscreen, Split View) doesn't always pick the panel up. Ask the Window
-            // Server whether it is really on screen, and order it in again when it isn't.
-            let lost = panel.isVisible && checkBars && !MenuBar.onScreenWindows.contains(panel.windowNumber)
-            if lost {
-                // Diagnostics: a panel that is ordered in but not on screen. Read with
-                // log show --last 1d --predicate 'subsystem == "io.github.vvyssen.hourglance"'
-                let ago = lastEvents.map { "\($0.key) \(String(format: "%.1f", -$0.value.timeIntervalSinceNow))s" }.sorted().joined(separator: ", ")
-                log.notice("panel off screen on \(screen.localizedName, privacy: .public); since: \(ago, privacy: .public)")
-            }
-            if !panel.isVisible || lost {
-                if !panel.isVisible { panel.alphaValue = targetAlpha(panel) }
-                panel.orderFrontRegardless()
-            }
+            panel.show(alpha: targetAlpha(panel))
         }
         updateMouseMonitor()
         updateInteraction()
@@ -255,7 +265,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// modifier-click), or a menu bar is hidden or only revealed for a moment (top-edge reveal). On a
     /// plain desktop with every menu bar visible, mouse movement doesn't wake the app at all.
     func updateMouseMonitor() {
-        let needed = panels.values.contains { $0.isVisible } || lastStates.values.contains { !$0.visible } || !hidesHere.isEmpty
+        let needed = panels.values.contains { $0.isShown } || lastStates.values.contains { !$0.visible } || !hidesHere.isEmpty
         if needed, mouseMonitor == nil {
             mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] _ in
                 self?.pointerMoved()
@@ -289,7 +299,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func updateInteraction() {
         let mouse = NSEvent.mouseLocation
         var anyNear = false
-        for p in panels.values where p.isVisible {
+        for p in panels.values where p.isShown {
             let near = p.frame.insetBy(dx: -24, dy: -24).contains(mouse)
             anyNear = anyNear || near
             let clickable = near && modifierHeld()

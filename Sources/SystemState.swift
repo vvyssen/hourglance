@@ -9,34 +9,34 @@ import Carbon
 ///    of the screen and drops out of the on-screen window list.
 ///  - Displays with a notch, in a fullscreen Space: the window stays where it is, and MenuBarAgent
 ///    covers the strip with a (black) window one layer above it. The cover goes away while the
-///    pointer reveals the menu bar.
+///    pointer reveals the menu bar. After a switch to such a Space the cover comes on screen up to
+///    a second later than the menu bar window; the caller bridges that gap with `covered` and
+///    `fullscreen` (WindowManager puts a backdrop window behind every fullscreen Space).
 /// So a menu bar is visible when its window is on screen and nothing from MenuBarAgent covers it.
 /// Owner name, layer and bounds are readable without Screen Recording permission.
 enum MenuBar {
-    struct State { var visible: Bool; var height: CGFloat? }
+    /// `covered`: the menu bar window is on screen under a MenuBarAgent cover.
+    /// `fullscreen`: the display is showing a fullscreen Space.
+    struct State { var visible: Bool; var height: CGFloat?; var covered = false; var fullscreen = false }
 
     /// Menu bar heights only change with display configuration, so the full window list is read rarely.
     private static var heightCache: [CGRect]?
     static func invalidateHeights() { heightCache = nil }
 
-    /// Window numbers that are really on screen right now (in the active Space of every display),
-    /// filled by the last `states(for:)` call.
-    private(set) static var onScreenWindows: Set<Int> = []
-
     static func states(for screens: [NSScreen]) -> [NSScreen: State] {
         let level = Int(CGWindowLevelForKey(.mainMenuWindow))
-        var covers: [CGRect] = []
+        let backdropLevel = Int(CGWindowLevelForKey(.desktopWindow)) + 1
+        var covers: [CGRect] = [], backdrops: [CGRect] = []
         func bars(_ opt: CGWindowListOption) -> [CGRect] {
             let list = CGWindowListCopyWindowInfo(opt, kCGNullWindowID) as? [[String: Any]] ?? []
             let onScreenOnly = opt.contains(.optionOnScreenOnly)
-            if onScreenOnly {
-                onScreenWindows = Set(list.compactMap { $0[kCGWindowNumber as String] as? Int })
-            }
             return list.compactMap { w in
                 guard let owner = w[kCGWindowOwnerName as String] as? String,
                       let layer = w[kCGWindowLayer as String] as? Int,
                       let b = w[kCGWindowBounds as String] as? NSDictionary,
-                      let r = CGRect(dictionaryRepresentation: b), r.height < 80 else { return nil }
+                      let r = CGRect(dictionaryRepresentation: b) else { return nil }
+                if onScreenOnly && owner == "WindowManager" && layer == backdropLevel { backdrops.append(r); return nil }
+                guard r.height < 80 else { return nil }
                 if onScreenOnly && owner == "MenuBarAgent" && layer > level { covers.append(r); return nil }
                 return owner == "Window Server" && layer == level ? r : nil
             }
@@ -51,12 +51,13 @@ enum MenuBar {
             let cgTop = primaryHeight - s.frame.maxY            // screen's top edge, CG coordinates
             let sameColumn: (CGRect) -> Bool = { abs($0.minX - s.frame.minX) < 2 && abs($0.width - s.frame.width) < 2 }
             let height = all.first(where: sameColumn)?.height
-            // Visible if any part of an on-screen menu bar reaches into this screen (includes the slide-in animation).
-            let visible = onScreen.contains { bar in
-                sameColumn(bar) && bar.maxY > cgTop + 1 && bar.minY < cgTop + s.frame.height
-                    && !covers.contains { sameColumn($0) && $0.minY <= bar.minY + 1 && $0.maxY >= bar.maxY - 1 }
-            }
-            out[s] = State(visible: visible, height: height)
+            // On screen if any part of a menu bar reaches into this screen (includes the slide-in animation).
+            let bar = onScreen.first { sameColumn($0) && $0.maxY > cgTop + 1 && $0.minY < cgTop + s.frame.height }
+            let covered = bar.map { bar in
+                covers.contains { sameColumn($0) && $0.minY <= bar.minY + 1 && $0.maxY >= bar.maxY - 1 }
+            } ?? false
+            let fullscreen = backdrops.contains { sameColumn($0) && abs($0.minY - cgTop) < 2 }
+            out[s] = State(visible: bar != nil && !covered, height: height, covered: covered, fullscreen: fullscreen)
         }
         return out
     }
